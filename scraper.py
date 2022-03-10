@@ -1,0 +1,57 @@
+from CatImageScraper import CatImageScraper
+
+cat_breeds = [
+    "Abyssinian",
+    "American Bobtail",
+    "American Curl",
+    "American Shorthair",
+    "American Wirehair",
+    "Applehead Siamese",
+    "Balinese",
+    "Bengal",
+    "Birman",
+    "Bombay",
+    "British Shorthair",
+    "Burmese",
+    "Burmilla",
+    "Calico",
+    "Canadian Hairless",
+    "Chartreux",
+    "Chausie",
+    "Chinchilla",
+    "Cornish Rex",
+    "Cymric",
+    "Devon Rex",
+    "Egyptian Mau",
+    "Havana",
+    "Himalayan",
+    "Japanese Bobtail",
+    "Javanese",
+    "Korat",
+    "LaPerm",
+    "Maine Coon",
+    "Manx",
+    "Munchkin",
+    "Nebelung",
+    "Norwegian Forest Cat",
+    "Ocicat",
+    "Persian",
+    "Pixiebob",
+    "Ragamuffin",
+    "Ragdoll",
+    "Russian Blue",
+    "Scottish Fold",
+    "Selkirk Rex",
+    "Siamese",
+    "Siberian",
+    "Singapura",
+    "Snowshoe",
+    "Somali",
+    "Sphynx",
+    "Tabby"
+]
+
+
+for breed in cat_breeds:
+    cat_scraper = CatImageScraper(cat_breed=breed, page=3)
+    cat_scraper.scrape()
