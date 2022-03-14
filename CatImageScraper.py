@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from http.client import HTTPResponse
+from nis import cat
 import urllib.request as request
 import urllib.parse as parse
 import re
@@ -7,14 +9,14 @@ import os
 
 class CatImageScraper:
 
-    def __init__(self, cat_breed, page) -> None:
-        self.cat_breed = cat_breed
-        self.cat_breed_query = cat_breed.replace(' ', "%20") + " cat"
+    def __init__(self, cat_breeds, page, fullsize=False, maxThreads=1) -> None:
+        self.cat_breeds = cat_breeds
         self.duckduckgo_content_url = "https://duckduckgo.com/i.js"
         self.image_parent_path = "cat_breeds"
-        self.image_counter = 1
         self.items_per_page = 100     # each page contains 100 images via duckduckgo
         self.page = page
+        self.fullsize = fullsize
+        self.maxThreads = maxThreads
         self.headers = {
             "Host": "duckduckgo.com",
             "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:97.0) Gecko/20100101 Firefox/97.0",
@@ -25,10 +27,10 @@ class CatImageScraper:
         }
 
     # Vqd is a unique identifier used in duckduckgo search. Seemingly unique per client.
-    def extractVqd(self) -> str:
+    def extractVqd(self, cat_breed: str) -> str:
         duckduckgo_initialurl = "https://duckduckgo.com/"
         params = {
-            "q": self.cat_breed_query
+            "q": cat_breed.replace(' ', "%20") + " cat"
         }
         request_obj = self.generateRequest(duckduckgo_initialurl, params, self.headers)
         # Response from urlopen comes as bytes when read, so need to decode to string
@@ -51,9 +53,9 @@ class CatImageScraper:
         return response_bytes.decode("utf8") # TODO: read from Content-Type header for charset
 
 
-    def getJsonContent(self, current_page: int, vqd: str) -> None:
+    def getJsonContent(self, cat_breed: str, current_page: int, vqd: str) -> None:
         params = {
-            "q": self.cat_breed_query,
+            "q": cat_breed.replace(' ', "%20") + " cat",
             "o": "json",
             "p": 1,
             "s": current_page * self.items_per_page,
@@ -68,32 +70,51 @@ class CatImageScraper:
         json_response = json.loads(response_string)
         return json_response
 
-    def extractThumbnailUrl(self, json_response) -> list:
-        return [e["thumbnail"] for e in json_response["results"]]
+    def extractImageUrl(self, json_response) -> list:
+        if self.fullsize:
+            return [e["image"] for e in json_response["results"]]
+        else:
+            return [e["thumbnail"] for e in json_response["results"]]
 
-    def downloadThumbnail(self, thumbnail_urls: list) -> None:
+    def downloadImage(self, cat_breed: str, image_urls: list, image_counter: int) -> int:
         # check file exists
         parent_relative_path = "./" + self.image_parent_path
         if not os.path.isdir(parent_relative_path):
             os.mkdir(parent_relative_path)
 
-        breed_relative_path = parent_relative_path + "/" + self.cat_breed
+        breed_relative_path = parent_relative_path + "/" + cat_breed
         if not os.path.isdir(breed_relative_path):
             os.mkdir(breed_relative_path)
 
-        for url in thumbnail_urls:
-            request.urlretrieve(url, breed_relative_path + "/" + self.cat_breed + "_" + str(self.image_counter))
-            self.image_counter += 1
+        for url in image_urls:
+            request.urlretrieve(url, breed_relative_path + "/" + cat_breed + "_" + str(image_counter))
+            image_counter += 1
+
+        return image_counter
+
+    def retrieveAndDownload(self, cat_breed: str):
+        # Get vqd from initial query
+        vqd = self.extractVqd(cat_breed)
+
+        # retrieve json content (with image links) in a step interval
+        page_limit = self.page + 1
+        image_counter = 1
+        for i in range(1, page_limit):
+            json_response = self.getJsonContent(cat_breed=cat_breed, current_page=i, vqd=vqd)
+            image_urls = self.extractImageUrl(json_response)
+            image_counter = self.downloadImage(cat_breed=cat_breed, image_urls=image_urls, image_counter=image_counter)
+
+    def processCatBreeds(self, cat_breeds: list):
+        for cat_breed in cat_breeds:
+            self.retrieveAndDownload(cat_breed=cat_breed)
 
     def scrape(self) -> None:
+        cat_breed_partitions = list(splitList(self.cat_breeds, 5))
 
-        # Get vqd from initial query
-        vqd = self.extractVqd()
+        with ThreadPoolExecutor(max_workers=self.maxThreads) as executor:
+            for partition in cat_breed_partitions:
+                executor.submit(self.processCatBreeds, partition)
 
-        # retrieve json content (with thumbnail image links) in a step interval
-        for i in range(1, self.page + 1):
-            json_response = self.getJsonContent(current_page=i, vqd=vqd)
-
-            thumbnail_urls = self.extractThumbnailUrl(json_response)
-
-            self.downloadThumbnail(thumbnail_urls)
+def splitList(input_list: list, number_of_parts: int):
+    k, m = divmod(len(input_list), number_of_parts)
+    return (input_list[i * k + min(i, m): (i + 1) * k + min (i + 1, m)] for i in range(number_of_parts))
